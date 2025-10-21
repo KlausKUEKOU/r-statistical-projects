@@ -1,0 +1,510 @@
+---
+title: "Suivi de la dynamique de la population mondiale"
+date: "r format(Sys.time(), '%d %B %Y')"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    logo: issea_logo.jpg
+    favicon: OIP.jpeg 
+    hide_console: TRUE
+    theme: flatly
+    runtime: shiny
+---
+
+<script>
+$(document).ready(function(){
+    $('[data-toggle="popover"]').popover({html: true}); 
+});
+</script>
+
+
+
+Welcome to your dashboard! We're thrilled to have you here. Explore, manage, and optimize your activities with ease.
+
+Bienvenue sur votre tableau de bord ! Nous sommes ravis de vous avoir ici. Explorez, gérez et optimisez vos activités en toute simplicité.
+
+Willkommen auf Ihrem Dashboard! Wir freuen uns, Sie hier zu haben. Erkunden, verwalten und optimieren Sie Ihre Aktivitäten mit Leichtigkeit.
+
+¡Bienvenido a su panel de control! Estamos encantados de tenerle aquí. Explore, gestione y optimice sus actividades con facilidad.
+
+欢迎来到您的仪表板！我们很高兴您能来到这里。轻松探索、管理和优化您的活动。
+
+مرحبًا بكم في لوحة التحكم الخاصة بكم! يسعدنا وجودكم هنا. استكشفوا، واديروا، وحسّنوا أنشطتكم بكل سهولة.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{js , include=FALSE}
+// Inverse color of navigation bar.
+$('.navbar-inverse').removeClass('navbar-inverse').addClass('navbar-default');
+```
+
+
+```{r , include=FALSE}
+library(magrittr)
+library(flexdashboard)
+library(dplyr)
+library(lubridate)
+library(formattable)
+library(highcharter)
+library(formattable)
+library(shiny)
+library(plotly) 
+library(viridis) 
+library(tidyverse) 
+library(countrycode) 
+library(rjson) 
+library(crosstalk) 
+library(DT) 
+library(readxl)
+library(DescTools)
+```
+
+
+```{r include=FALSE}
+file_path <- 'C:/Users/ACER/Documents/big k/Projet_Dataviz_Klaus_KUEKOU_2024/2025/data.xlsx'
+tryCatch({
+  dataR <- read_excel(file_path, sheet = 'Reel')
+  dataP <- read_excel(file_path, sheet = 'Prevision')
+}, warning = function(w) {
+  message("Un avertissement s'est produit : ", w)
+}, error = function(e) {
+  message("Une erreur s'est produite : ", e)
+})
+```
+
+
+Suivi global des indicateurs démographiques {data-icon="fa-binoculars"}
+======================================================================================
+
+```{r}
+
+```
+
+```{r}
+sidebarLayout(
+  sidebarPanel(
+    sliderInput("year_range", "Select Year Range:",
+                min = min(dataR$Year),
+                max = max(dataR$Year),
+                value = c(min(dataR$Year), max(dataR$Year)),
+                step = 1),
+    
+    selectInput("region", "Choose a Region:",
+                choices = unique(dataR$Type), 
+                selected = unique(dataR$Type)[1],
+                multiple = TRUE),
+    
+    selectInput("country", "Choose a Country:",
+                choices = unique(dataR$Region), 
+                selected = unique(dataR$Region)[1],
+                multiple = TRUE), 
+    
+    downloadButton("download_data", "Download Data")
+  ),
+  
+  mainPanel(
+    DTOutput("data_table"),
+    valueBoxOutput("highest_score"),
+    valueBoxOutput("number_movies"),
+    valueBoxOutput("number_production_studio"),
+    valueBoxOutput("audience_satisfaction"),
+    highchartOutput("scatter_plot"),
+    DTOutput("data_table")
+  )
+)
+```
+
+```{r}
+
+output$female_growth_box <- renderValueBox({
+  # Filtrer les données en fonction des entrées de l'utilisateur
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  # Vérifier si les données filtrées ne sont pas vides
+  if(nrow(filtered_data) > 0) {
+    # Calculer le taux de croissance de la population féminine
+    female_growth <- filtered_data %>%
+      arrange(Year) %>%
+      summarise(
+        Female_Start = first(`Female Population(thousands)`),
+        Female_End = last(`Female Population(thousands)`)
+      ) %>%
+      mutate(Growth_Rate = ((Female_End - Female_Start) / Female_Start) * 100)
+    
+    # Créer une boîte avec le taux de croissance calculé
+    valueBox(
+      value = paste0(round(female_growth$Growth_Rate, 2), " %"),
+      subtitle = "Taux de croissance - Population féminine",
+      icon = icon("female"),
+      color = ifelse(female_growth$Growth_Rate > 0, "success", "danger")
+    )
+  } else {
+    # Si aucune donnée n'est disponible
+    valueBox(
+      value = "N/A",
+      subtitle = "Taux de croissance - Population féminine",
+      icon = icon("female"),
+      color = "warning"
+    )
+  }
+})
+```
+
+```{r}
+# Mise à jour des choix de pays en fonction de la région sélectionnée
+observe({
+  selected_region <- input$region
+  countries <- dataR %>%
+    filter(Type == selected_region) %>%
+    pull(Region)
+  
+  updateSelectInput(session, "country", choices = unique(countries), selected = unique(countries)[1], multiple = TRUE)
+})
+```
+
+Row {data-height=5}
+-----------------------------------------------------------------------
+ 
+### Croissance démographique   
+```{r}
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+### Taux de croissance démographique (%) 
+
+```{r}
+output$growth <- renderValueBox({
+  growth <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(
+      Pop_Start = first('Total Population(thousands)', order_by = Year),
+      Pop_End = last('Total Population(thousands)', order_by = Year)
+    ) %>%
+    mutate(Growth_Rate = ((Pop_End - Pop_Start) / Pop_Start) * 100) 
+
+  valueBox(
+    paste0(round(growth$Growth_Rate, 2), " %"),
+    "Taux de croissance démographique",
+    icon = icon("chart-line"),
+    color = ifelse(growth$Growth_Rate > 0, "lightgreen", "red")
+  )
+})
+
+```
+
+### Taux de croissance démographique Masculine (%) 
+
+```{r}
+output$male_growth <- renderValueBox({
+  male_growth <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(
+      Male_Start = first('Male Population(thousands)', order_by = Year),
+      Male_End = last('Male Population(thousands)', order_by = Year)
+    ) %>%
+    mutate(Growth_Rate = ((Male_End - Male_Start) / Male_Start) * 100)
+
+  valueBox(
+    paste0(round(male_growth$Growth_Rate, 2), " %"),
+    "Taux de croissance - Population masculine",
+    icon = icon("male"),
+    color = ifelse(male_growth$Growth_Rate > 0, "lightblue", "red")
+  )
+})
+```
+
+### Taux de croissance démographique Féminine (%) 
+
+```{r}
+output$female_growth <- renderValueBox({
+  female_growth <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(
+      Female_Start = first('Female Population(thousands)', order_by = Year),
+      Female_End = last('Female Population(thousands)', order_by = Year)
+    ) %>%
+    mutate(Growth_Rate = ((Female_End - Female_Start) / Female_Start) * 100)
+
+  valueBox(
+    paste0(round(female_growth$Growth_Rate, 2), " %"),
+    "Taux de croissance - Population féminine",
+    icon = icon("female"),
+    color = ifelse(female_growth$Growth_Rate > 0, "pink", "red")
+  )
+})
+```
+
+Row {data-height=5}
+-----------------------------------------------------------------------
+
+### Esperance de vie
+
+```{r}
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+### Espérance de vie - Tous sexes
+
+```{r}
+output$life_expectancy_both <- renderValueBox({
+  life_expectancy_both <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(Average_Life_Expectancy = mean(`Life Expectancy at Birth both sexes (years)`, na.rm = TRUE))
+
+  valueBox(
+    paste0(round(life_expectancy_both$Average_Life_Expectancy, 1), " ans"),
+    "Espérance de vie - Tous sexes",
+    icon = icon("heartbeat"),
+    color = "lightgreen"
+  )
+})
+```
+
+### Espérance de vie - Hommes
+
+```{r}
+output$life_expectancy_male <- renderValueBox({
+  life_expectancy_male <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(Average_Life_Expectancy = mean(`Male Life Expectancy at Birth (years)`, na.rm = TRUE))
+
+  valueBox(
+    paste0(round(life_expectancy_male$Average_Life_Expectancy, 1), " ans"),
+    "Espérance de vie - Hommes",
+    icon = icon("male"),
+    color = "lightblue"
+  )
+})
+```
+
+### Espérance de vie - Femmes
+
+```{r}
+output$life_expectancy_female <- renderValueBox({
+  life_expectancy_female <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(Average_Life_Expectancy = mean(`Female Life Expectancy at Birth (years)`, na.rm = TRUE))
+
+  valueBox(
+    paste0(round(life_expectancy_female$Average_Life_Expectancy, 1), " ans"),
+    "Espérance de vie - Femmes",
+    icon = icon("female"),
+    color = "pink"
+  )
+})
+```
+
+
+### Age médian Moyen
+
+```{r}
+output$median_age <- renderValueBox({
+  median_age <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(Average_Median_Age = mean(`Median Age(years)`, na.rm = TRUE))
+
+  valueBox(
+    paste0(round(median_age$Average_Median_Age, 1), " ans"),
+    "Âge médian moyen",
+    icon = icon("user"),
+    color = "darkblue"
+  )
+})
+```
+
+### Ratio moyen de sexe (Hommes pour  100 femmes)
+
+```{r}
+output$sex_ratio <- renderValueBox({
+  sex_ratio <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Type` == input$region,
+           `Country or Area` == input$country) %>%
+    summarise(Geometric_Sex_Ratio = Gmean(`Population Sex Ratio(males per 100 females)`, na.rm = TRUE))
+
+  valueBox(
+    paste0(round(sex_ratio$Geometric_Sex_Ratio, 2), " ♂/♀"),
+    "Ratio de population (Hommes pour 100 Femmes)",
+    icon = icon("balance-scale"),
+    color = "darkgreen"
+  )
+})
+```
+
+Row
+-----------------------------------------------------------------------
+
+###
+
+```{r}
+
+```
+
+
+###
+
+```{r}
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+###
+
+```{r}
+
+```
+
+
+###
+
+```{r}
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+###
+
+```{r}
+ 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+```
+
+
+```{r}
+output$scatter_plot <- renderHighchart({
+  filtered_data <- data %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Region, subregion, country or area *` == input$region,
+           `Country or Area` == input$country)
+
+  highchart() %>%
+    hc_add_series(data = filtered_data, type = "scatter", 
+                  hcaes(x = Critics_Score, y = Audience_Satisfaction, text = Title)) %>%
+    hc_title(text = "Relationship between Critics Score and Audience Satisfaction") %>%
+    hc_xAxis(title = list(text = "Critics Score")) %>%
+    hc_yAxis(title = list(text = "Audience Satisfaction"))
+})
+```
+
+
+
+```{r}
+
+```
+
+
+
+```{r}
+output$data_table <- renderDT({
+  filtered_data <- data %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           `Region, subregion, country or area *` == input$region,
+           `Country or Area` == input$country)
+
+  datatable(filtered_data, options = list(pageLength = 10))
+})
+```
+
+
+
+```{r}
+output$download_data <- downloadHandler(
+  filename = function() {
+    paste("data_", Sys.Date(), ".csv", sep = "")
+  },
+  content = function(file) {
+    filtered_data <- data %>%
+      filter(Year >= input$year_range[1], Year <= input$year_range[2],
+             `Region, subregion, country or area *` == input$region,
+             `Country or Area` == input$country)
+    
+    write.csv(filtered_data, file, row.names = FALSE)
+  }
+)
+```
+
+
+
+Row
+-----------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+

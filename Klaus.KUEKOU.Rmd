@@ -1,0 +1,1053 @@
+---
+title: "Suivi de la dynamique de la population mondiale"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    logo: issea_logo.jpg
+    favicon: OIP.jpeg 
+    hide_console: TRUE
+    theme: flatly
+    runtime: shiny
+    social: ["github","linkedin", "youtube","twitter", "facebook","instagram","pinterest", "menu"]
+---
+```{r}
+#    source_code: embed
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+<script>
+$(document).ready(function(){
+    $('[data-toggle="popover"]').popover({html: true}); 
+});
+</script>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{js , include=FALSE}
+// Inverse color of navigation bar.
+$('.navbar-inverse').removeClass('navbar-inverse').addClass('navbar-default');
+```
+
+
+```{r}
+
+```
+
+
+```{r set_cran_mirror, include=FALSE}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+if (!requireNamespace("rnaturalearth", quietly = TRUE)) {
+  install.packages("rnaturalearth")
+}
+
+if (!requireNamespace("rnaturalearthdata", quietly = TRUE)) {
+  install.packages("rnaturalearthdata")
+}
+
+if (!requireNamespace("sf", quietly = TRUE)) {
+  install.packages("sf")
+}
+
+if (!requireNamespace("countrycode", quietly = TRUE)) {
+  install.packages("countrycode")
+}
+```
+
+
+```{r , include=FALSE}
+library(magrittr)
+library(flexdashboard)
+library(dplyr)
+library(lubridate)
+library(formattable)
+library(highcharter)
+library(shiny)
+library(plotly) 
+library(viridis) 
+library(tidyverse) 
+library(countrycode) 
+library(rjson) 
+library(crosstalk) 
+library(DT) 
+library(readxl)
+library(DescTools)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(leaflet)
+library(rnaturalearth)
+library(sf)
+library(RColorBrewer)
+```
+
+```{r include=FALSE}
+file_path <- 'C:/Users/ACER/Documents/big k/Projet_Dataviz_Klaus_KUEKOU_2024/2025/data.xlsx'
+
+dataR <- read_excel(file_path, sheet = 'Reel')
+dataP <- read_excel(file_path, sheet = 'Prevision')
+
+# Préparation des données pour les analyses globales
+pop_world <- dataR %>%
+  filter(Type == "World") %>%
+  mutate(across(where(is.character), ~na_if(., ""))) %>%
+  mutate(across(where(is.numeric), ~na_if(., 0)))
+```
+
+Suivi global des indicateurs démographiques {data-icon="fa-binoculars"}
+======================================================================================
+
+Row {.sidebar}
+-----------------------------------------------------------------------
+
+```{r, echo =FALSE}
+# Notez que je place ceci dans la sidebar pour une meilleure organisation
+sliderInput("year_range", "Année:",
+            min = min(dataR$Year, na.rm = TRUE),
+            max = max(dataR$Year, na.rm = TRUE),
+            value = c(min(dataR$Year, na.rm = TRUE), max(dataR$Year, na.rm = TRUE)),
+            step = 1)
+    
+selectInput("region", "Choisissez une région:",
+            choices = unique(dataR$Type), 
+            selected = unique(dataR$Type)[1],
+            multiple = TRUE)
+
+selectInput("country", "Choisissez un pays:",
+            choices = unique(dataR$Region), 
+            selected = unique(dataR$Region)[1],
+            multiple = TRUE)
+
+downloadButton("download_data", "Télécharger les données")
+```
+
+```{r, echo =FALSE}
+# Mise à jour des choix de pays en fonction de la région sélectionnée
+observe({
+  selected_region <- input$region
+  filtered_data <- dataR %>%
+    filter(Type %in% selected_region)
+  
+  countries <- unique(filtered_data$Region)
+  
+  updateSelectInput(session, "country", 
+                    choices = countries, 
+                    selected = countries[1])
+})
+```
+
+Row {data-height=150}
+-----------------------------------------------------------------------
+ 
+### Croissance démographique {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    growth <- filtered_data %>%
+      arrange(Year) %>%
+      summarise(
+        Pop_Start = as.numeric(first(`Total Population(thousands)`)),
+        Pop_End = as.numeric(last(`Total Population(thousands)`))
+      ) %>%
+      mutate(Growth_Rate = ((Pop_End - Pop_Start) / Pop_Start) * 100)
+    
+    valueBox(
+      paste0(round(growth$Growth_Rate, 2), " %"),
+      "Taux de croissance démographique",
+      icon = "fa-chart-line",
+      color = ifelse(growth$Growth_Rate > 0, "success", "danger")
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Taux de croissance démographique",
+      icon = "fa-chart-line",
+      color = "warning"
+    )
+  }
+})
+```
+
+### Taux de croissance démographique Masculine {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    male_growth <- filtered_data %>%
+      arrange(Year) %>%
+      summarise(
+        Male_Start = as.numeric(first(`Male Population(thousands)`)),
+        Male_End = as.numeric(last(`Male Population(thousands)`))
+      ) %>%
+      mutate(Growth_Rate = ((Male_End - Male_Start) / Male_Start) * 100)
+    
+    valueBox(
+      paste0(round(male_growth$Growth_Rate, 2), " %"),
+      "Taux de croissance - Population masculine",
+      icon = "fa-male",
+      color = ifelse(male_growth$Growth_Rate > 0, "info", "danger")
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Taux de croissance - Population masculine",
+      icon = "fa-male",
+      color = "warning"
+    )
+  }
+})
+```
+
+### Taux de croissance démographique Féminine {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    female_growth <- filtered_data %>%
+      arrange(Year) %>%
+      summarise(
+        Female_Start = as.numeric(first(`Female Population(thousands)`)),
+        Female_End = as.numeric(last(`Female Population(thousands)`))
+      ) %>%
+      mutate(Growth_Rate = ((Female_End - Female_Start) / Female_Start) * 100)
+    
+    valueBox(
+      paste0(round(female_growth$Growth_Rate, 2), " %"),
+      "Taux de croissance - Population féminine",
+      icon = "fa-female",
+      color = ifelse(female_growth$Growth_Rate > 0, "success", "danger")
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Taux de croissance - Population féminine",
+      icon = "fa-female",
+      color = "warning"
+    )
+  }
+})
+```
+
+Row {data-height=150}
+-----------------------------------------------------------------------
+
+### Espérance de vie - Tous sexes {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    life_expectancy_both <- filtered_data %>%
+      summarise(Average_Life_Expectancy = mean(`Life Expectancy at Birth both sexes (years)`, na.rm = TRUE))
+    
+    valueBox(
+      paste0(round(life_expectancy_both$Average_Life_Expectancy, 1), " ans"),
+      "Espérance de vie - Tous sexes",
+      icon = "fa-heartbeat",
+      color = "success"
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Espérance de vie - Tous sexes",
+      icon = "fa-heartbeat",
+      color = "warning"
+    )
+  }
+})
+```
+
+### Espérance de vie - Hommes {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    life_expectancy_male <- filtered_data %>%
+      summarise(Average_Life_Expectancy = mean(`Male Life Expectancy at Birth (years)`, na.rm = TRUE))
+    
+    valueBox(
+      paste0(round(life_expectancy_male$Average_Life_Expectancy, 1), " ans"),
+      "Espérance de vie - Hommes",
+      icon = "fa-male",
+      color = "info"
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Espérance de vie - Hommes",
+      icon = "fa-male",
+      color = "warning"
+    )
+  }
+})
+```
+
+### Espérance de vie - Femmes {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    life_expectancy_female <- filtered_data %>%
+      summarise(Average_Life_Expectancy = mean(`Female Life Expectancy at Birth (years)`, na.rm = TRUE))
+    
+    valueBox(
+      paste0(round(life_expectancy_female$Average_Life_Expectancy, 1), " ans"),
+      "Espérance de vie - Femmes",
+      icon = "fa-female", 
+      color = "success"
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Espérance de vie - Femmes",
+      icon = "fa-female",
+      color = "warning"
+    )
+  }
+})
+```
+
+Row {data-height=150}
+-----------------------------------------------------------------------
+
+### Age médian Moyen {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    median_age <- filtered_data %>%
+      summarise(Average_Median_Age = mean(`Median Age(years)`, na.rm = TRUE))
+    
+    valueBox(
+      paste0(round(median_age$Average_Median_Age, 1), " ans"),
+      "Âge médian moyen",
+      icon = "fa-user",
+      color = "primary"
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Âge médian moyen",
+      icon = "fa-user",
+      color = "warning"
+    )
+  }
+})
+```
+
+### Ratio moyen de sexe (Hommes pour 100 femmes) {.value-box}
+```{r, echo=FALSE}
+renderValueBox({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  if(nrow(filtered_data) > 0) {
+    sex_ratio <- filtered_data %>%
+      summarise(Geometric_Sex_Ratio = Gmean(`Population Sex Ratio(males per 100 females)`, na.rm = TRUE))
+    
+    valueBox(
+      paste0(round(sex_ratio$Geometric_Sex_Ratio, 2), " ♂/♀"),
+      "Ratio de population (Hommes pour 100 Femmes)",
+      icon = "fa-balance-scale",
+      color = "success"
+    )
+  } else {
+    valueBox(
+      "N/A",
+      "Ratio de population (Hommes pour 100 Femmes)",
+      icon = "fa-balance-scale",
+      color = "warning"
+    )
+  }
+})
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Évolution de la population
+
+```{r, echo=FALSE}
+renderHighchart({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country)
+  
+  # Vérifier si les données sont vides
+  if(nrow(filtered_data) == 0) {
+    return(highchart() %>% 
+             hc_title(text = "Aucune donnée disponible pour la sélection") %>%
+             hc_add_series(data = NULL, type = "line", name = "Pas de données"))
+  }
+  
+  highchart() %>%
+    hc_add_series(data = filtered_data, "line", 
+                  hcaes(x = Year, y = `Total Population(thousands)`),
+                  name = "Population totale") %>%
+    hc_title(text = "Évolution de la population totale") %>%
+    hc_xAxis(title = list(text = "Année")) %>%
+    hc_yAxis(title = list(text = "Population (milliers)")) %>%
+    hc_tooltip(pointFormat = "<b>Population:</b> {point.y} milliers")
+})
+```
+
+
+### Tableau de données
+```{r, echo =FALSE}
+renderDT({
+  filtered_data <- dataR %>%
+    filter(Year >= input$year_range[1], Year <= input$year_range[2],
+           Type %in% input$region,
+           Region %in% input$country) %>%
+    select(Year, Region, `Total Population(thousands)`, 
+           `Male Population(thousands)`, `Female Population(thousands)`, 
+           `Life Expectancy at Birth both sexes (years)`)
+  
+  datatable(filtered_data, options = list(pageLength = 10))
+})
+```
+
+```{r, echo=FALSE}
+# Gestionnaire de téléchargement
+output$download_data <- downloadHandler(
+  filename = function() {
+    paste("demographic_data_", Sys.Date(), ".csv", sep = "")
+  },
+  content = function(file) {
+    filtered_data <- dataR %>%
+      filter(Year >= input$year_range[1], Year <= input$year_range[2],
+             Type %in% input$region,
+             Region %in% input$country)
+    
+    write.csv(filtered_data, file, row.names = FALSE)
+  }
+)
+```
+
+Tendances Globales {data-icon="fa-globe"}
+=======================================================================
+
+Row {data-height=600}
+-----------------------------------------------------------------------
+
+### Évolution de la Population Mondiale
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Total Population(thousands)` / 1000000, 
+            type = 'scatter', mode = 'lines+markers',
+            name = 'Population Totale') %>%
+    add_trace(y = ~`Male Population(thousands)` / 1000000, 
+              name = 'Population Masculine',
+              mode = 'lines+markers') %>%
+    add_trace(y = ~`Female Population(thousands)` / 1000000,
+              name = 'Population Féminine',
+              mode = 'lines+markers') %>%
+    layout(title = 'Population Mondiale (en milliards)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Population (milliards)'),
+           hovermode = "compare")
+})
+```
+
+### Taux de Croissance Démographique
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Population Growth Rate (percentage)`, 
+            type = 'bar', name = 'Taux de Croissance') %>%
+    layout(title = 'Taux de Croissance Démographique Annuel (%)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Taux (%)'))
+})
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Densité de Population
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Population Density, as of 1 July (persons per square km)`, 
+            type = 'scatter', mode = 'lines+markers', 
+            marker = list(size = 8),
+            line = list(width = 3)) %>%
+    layout(title = 'Densité de Population Mondiale (habitants/km²)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Densité (hab/km²)'))
+})
+```
+
+### Ratio Hommes/Femmes
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Population Sex Ratio(males per 100 females)`, 
+            type = 'scatter', mode = 'lines+markers',
+            line = list(width = 3, color = 'purple'),
+            marker = list(size = 8, color = 'purple')) %>%
+    layout(title = 'Ratio Hommes/Femmes (hommes pour 100 femmes)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Ratio'))
+})
+```
+
+Natalité et Mortalité {data-icon="fa-heartbeat"}
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Évolution des Naissances et Décès
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly() %>%
+    add_trace(x = ~Year, y = ~`Births (thousands)` / 1000, 
+              type = 'scatter', mode = 'lines', name = 'Naissances',
+              line = list(color = 'green', width = 3)) %>%
+    add_trace(x = ~Year, y = ~`Total Deaths (thousands)` / 1000, 
+              type = 'scatter', mode = 'lines', name = 'Décès',
+              line = list(color = 'red', width = 3)) %>%
+    layout(title = 'Naissances et Décès (en millions)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Nombre (millions)'))
+})
+```
+
+### Taux de Fertilité Total
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Total Fertility Rate (live births per woman)`, 
+            type = 'scatter', mode = 'lines+markers',
+            line = list(width = 3, color = 'orange'),
+            marker = list(size = 8, color = 'orange')) %>%
+    layout(title = 'Taux de Fertilité Total (naissances vivantes par femme)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Naissances par femme'))
+})
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Mortalité Infantile
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly() %>%
+    add_trace(x = ~Year, y = ~`Infant Mortality Rate (infant deaths per 1,000 live births)`, 
+              type = 'scatter', mode = 'lines+markers', name = 'Taux',
+              line = list(width = 3, color = 'red')) %>%
+    add_bars(x = ~Year, y = ~`Infant Deaths, under age 1 (thousands)` / 1000, 
+             name = 'Nombre (millions)',
+             marker = list(color = 'rgba(255, 0, 0, 0.3)')) %>%
+    layout(title = 'Mortalité Infantile',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Taux pour 1000 naissances'),
+           yaxis2 = list(title = 'Décès (millions)', 
+                        overlaying = "y", 
+                        side = "right"))
+})
+```
+
+### Changement Naturel de la Population
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Natural Change, Births minus Deaths (thousands)` / 1000, 
+            type = 'bar', marker = list(color = 'steelblue')) %>%
+    layout(title = 'Changement Naturel de la Population (naissances - décès)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Millions'))
+})
+```
+
+Espérance de Vie {data-icon="fa-user"}
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Espérance de Vie par Sexe
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly() %>%
+    add_trace(x = ~Year, y = ~`Life Expectancy at Birth both sexes (years)`, 
+              type = 'scatter', mode = 'lines+markers', name = 'Total',
+              line = list(width = 3, color = 'black'),
+              marker = list(size = 8, color = 'black')) %>%
+    add_trace(x = ~Year, y = ~`Male Life Expectancy at Birth (years)`, 
+              type = 'scatter', mode = 'lines+markers', name = 'Hommes',
+              line = list(width = 3, color = 'blue'),
+              marker = list(size = 8, color = 'blue')) %>%
+    add_trace(x = ~Year, y = ~`Female Life Expectancy at Birth (years)`, 
+              type = 'scatter', mode = 'lines+markers', name = 'Femmes',
+              line = list(width = 3, color = 'red'),
+              marker = list(size = 8, color = 'red')) %>%
+    layout(title = 'Espérance de Vie à la Naissance (années)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Âge (années)'))
+})
+```
+
+### Différence d'Espérance de Vie entre les Sexes
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    mutate(LifeExpDiff = `Female Life Expectancy at Birth (years)` - 
+             `Male Life Expectancy at Birth (years)`) %>%
+    plot_ly(x = ~Year, y = ~LifeExpDiff, 
+            type = 'scatter', mode = 'lines+markers',
+            line = list(width = 3, color = 'purple'),
+            marker = list(size = 8, color = 'purple')) %>%
+    layout(title = 'Différence d\'Espérance de Vie (Femmes - Hommes)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Différence (années)'))
+})
+```
+
+Analyse Démographique {data-icon="fa-bar-chart"}
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Âge Médian de la Population
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Median Age(years)`, 
+            type = 'scatter', mode = 'lines+markers',
+            line = list(width = 3, color = 'darkgreen'),
+            marker = list(size = 8, color = 'darkgreen')) %>%
+    layout(title = 'Âge Médian de la Population Mondiale',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Âge (années)'))
+})
+```
+
+### Ratio des Sexes à la Naissance
+
+```{r, echo=FALSE}
+renderPlotly({
+  pop_world %>%
+    plot_ly(x = ~Year, y = ~`Sex Ratio at Birth (males per 100 female births)`, 
+            type = 'scatter', mode = 'lines+markers',
+            line = list(width = 3),
+            marker = list(size = 8)) %>%
+    layout(title = 'Ratio des Sexes à la Naissance (garçons pour 100 filles)',
+           xaxis = list(title = 'Année'),
+           yaxis = list(title = 'Ratio'))
+})
+```
+
+
+Cartographie Mondiale {data-icon="fa-map-marker"}
+=======================================================================
+
+Row {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+```{r, echo=FALSE}
+selectInput("map_year", "Année:",
+            choices = sort(unique(dataR$Year), decreasing = TRUE), 
+            selected = max(dataR$Year, na.rm = TRUE))
+
+selectInput("color_palette", "Palette de couleurs:",
+            choices = c("Bleus" = "Blues", 
+                        "Verts" = "Greens", 
+                        "Rouges" = "Reds", 
+                        "Pourpres" = "Purples", 
+                        "Orange" = "Oranges", 
+                        "Spectral" = "Spectral"), 
+            selected = "Blues")
+
+sliderInput("num_classes", "Nombre de classes:",
+            min = 3, max = 9, value = 5, step = 1)
+
+actionButton("refresh_maps", "Rafraîchir les cartes", icon = icon("refresh"))
+```
+
+```{r prepare_map_data, echo=FALSE}
+prepare_map_data <- function(year_selected, indicator_name) {
+  country_data <- dataR %>%
+    filter(Year == year_selected, 
+           !Type %in% c("World", "SDG region", "Development Group", "Income Group", "Special other"))
+
+  country_data$iso3c <- countrycode(country_data$Region, 'country.name', 'iso3c', warn = FALSE)
+  
+  # Pour les pays sans correspondance, essayer avec les codes personnalisés
+  custom_matches <- data.frame(
+    country_name = c("United States of America", "Russian Federation", "Republic of Korea", 
+                   "Iran (Islamic Republic of)", "Venezuela (Bolivarian Republic of)",
+                   "United Kingdom", "Bolivia (Plurinational State of)", "Viet Nam",
+                   "Democratic People's Republic of Korea", "Lao People's Democratic Republic",
+                   "China, Taiwan Province of China", "China, Hong Kong SAR", "China, Macao SAR"),
+    iso3c = c("USA", "RUS", "KOR", "IRN", "VEN", "GBR", "BOL", "VNM", "PRK", "LAO", "TWN", "HKG", "MAC")
+  )
+
+  for (i in 1:nrow(custom_matches)) {
+    country_data$iso3c[country_data$Region == custom_matches$country_name[i]] <- custom_matches$iso3c[i]
+  }
+
+  # Charger les données de la carte mondiale
+  world_map <- ne_countries(scale = "medium", returnclass = "sf")
+  
+  # Fusionner les données
+  map_data <- merge(world_map, country_data, by.x = "iso_a3", by.y = "iso3c", all.x = TRUE)
+  
+  return(map_data)
+}
+```
+
+Row {data-height=500}
+-----------------------------------------------------------------------
+
+### Population Totale (milliers)
+
+```{r, echo=FALSE}
+output$total_population_map <- renderLeaflet({
+  req(input$map_year)
+  
+  map_data <- prepare_map_data(input$map_year, "Total Population(thousands)")
+
+  pal <- colorQuantile(
+    palette = input$color_palette, 
+    domain = map_data$`Total Population(thousands)`,
+    n = input$num_classes,
+    na.color = "#CCCCCC"
+  )
+  
+  # Créer la carte
+  leaflet(map_data) %>%
+    addTiles() %>%
+    addPolygons(
+      fillColor = ~pal(`Total Population(thousands)`),
+      weight = 1,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlight = highlightOptions(
+        weight = 2,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      ),
+      label = ~paste(Region, ": ", formatC("Total Population(thousands)", format = "f", big.mark = " ", digits = 0), " milliers"),
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto"
+      )
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = map_data$`Total Population(thousands)`,
+      title = "Population Totale<br>(milliers)",
+      opacity = 0.7,
+      na.label = "Non disponible"
+    )
+})
+```
+
+### Âge Médian (années)
+
+```{r, echo=FALSE}
+output$median_age_map <- renderLeaflet({
+  req(input$map_year)
+  
+  # Préparer les données
+  map_data <- prepare_map_data(input$map_year, "Median Age(years)")
+  
+  # Créer des palettes de couleurs
+  pal <- colorQuantile(
+    palette = input$color_palette, 
+    domain = map_data$`Median Age(years)`,
+    n = input$num_classes,
+    na.color = "#CCCCCC"
+  )
+  
+  # Créer la carte
+  leaflet(map_data) %>%
+    addTiles() %>%
+    addPolygons(
+      fillColor = ~pal(`Median Age(years)`),
+      weight = 1,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlight = highlightOptions(
+        weight = 2,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      ),
+      label = ~paste(Region, ": ", formatC("Median Age(years)", format = "f", big.mark = " ", digits = 1), " ans"),
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto"
+      )
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = map_data$`Median Age(years)`,
+      title = "Âge Médian<br>(années)",
+      opacity = 0.7,
+      na.label = "Non disponible"
+    )
+})
+```
+
+
+Row {data-height=500}
+-----------------------------------------------------------------------
+
+### Changement Naturel (Naissances - Décès, milliers)
+
+```{r, echo=FALSE}
+output$natural_change_map <- renderLeaflet({
+  req(input$map_year)
+  
+  map_data <- prepare_map_data(input$map_year, "Natural Change, Births minus Deaths (thousands)")
+
+  if(input$color_palette == "Spectral") {
+    pal_palette <- "Spectral"
+  } else {
+    pal_palette <- "RdBu"
+  }
+
+  min_val <- min(map_data$`Natural Change, Births minus Deaths (thousands)`, na.rm = TRUE)
+  max_val <- max(map_data$`Natural Change, Births minus Deaths (thousands)`, na.rm = TRUE)
+  abs_max <- max(abs(min_val), abs(max_val))
+
+  pal <- colorNumeric(
+    palette = pal_palette,
+    domain = c(-abs_max, abs_max),
+    na.color = "#CCCCCC"
+  )
+
+  leaflet(map_data) %>%
+    addTiles() %>%
+    addPolygons(
+      fillColor = ~pal(`Natural Change, Births minus Deaths (thousands)`),
+      weight = 1,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlight = highlightOptions(
+        weight = 2,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      ),
+      label = ~paste(Region, ": ", formatC("Natural Change, Births minus Deaths (thousands)", format = "f", big.mark = " ", digits = 0), " milliers"),
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto"
+      )
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = c(-abs_max, abs_max),
+      title = "Naissances - Décès<br>(milliers)",
+      opacity = 0.7,
+      na.label = "Non disponible"
+    )
+})
+```
+
+### Migration Nette (milliers)
+
+```{r, echo=FALSE}
+output$net_migration_map <- renderLeaflet({
+  req(input$map_year)
+  
+  map_data <- prepare_map_data(input$map_year, "Net Number of Migrants (thousands)")
+
+  if(input$color_palette == "Spectral") {
+    pal_palette <- "Spectral"
+  } else {
+    pal_palette <- "RdBu"
+  }
+
+  min_val <- min(map_data$`Net Number of Migrants (thousands)`, na.rm = TRUE)
+  max_val <- max(map_data$`Net Number of Migrants (thousands)`, na.rm = TRUE)
+  abs_max <- max(abs(min_val), abs(max_val))
+
+  pal <- colorNumeric(
+    palette = pal_palette,
+    domain = c(-abs_max, abs_max),
+    na.color = "#CCCCCC"
+  )
+
+  leaflet(map_data) %>%
+    addTiles() %>%
+    addPolygons(
+      fillColor = ~pal(`Net Number of Migrants (thousands)`),
+      weight = 1,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlight = highlightOptions(
+        weight = 2,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      ),
+      label = ~paste(Region, ": ", formatC("Net Number of Migrants (thousands)", format = "f", big.mark = " ", digits = 0), " milliers"),
+      labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto"
+      )
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = c(-abs_max, abs_max),
+      title = "Migration Nette<br>(milliers)",
+      opacity = 0.7,
+      na.label = "Non disponible"
+    )
+})
+```
+
+```{r, echo=FALSE}
+# Afficher les cartes dans l'interface utilisateur
+leafletOutput("total_population_map")
+leafletOutput("natural_change_map")
+leafletOutput("median_age_map")
+leafletOutput("net_migration_map")
+
+# Observer pour rafraîchir les cartes quand on clique sur le bouton
+observeEvent(input$refresh_maps, {
+  leafletProxy("total_population_map") %>% clearShapes()
+  leafletProxy("natural_change_map") %>% clearShapes()
+  leafletProxy("median_age_map") %>% clearShapes()
+  leafletProxy("net_migration_map") %>% clearShapes()
+})
+```
+
+
+Données Brutes {data-icon="fa-table"}
+=======================================================================
+
+### Tableau de Données Complètes
+
+```{r, echo=FALSE}
+renderDT({
+  datatable(pop_world %>%
+              select(Year, 
+                     `Total Population(thousands)`,
+                     `Population Growth Rate (percentage)`,
+                     `Total Fertility Rate (live births per woman)`,
+                     `Life Expectancy at Birth both sexes (years)`,
+                     `Infant Mortality Rate (infant deaths per 1,000 live births)`,
+                     `Median Age(years)`),
+            colnames = c('Année', 'Population Totale (milliers)', 
+                         'Taux de Croissance (%)', 'Taux de Fertilité',
+                         'Espérance de Vie (années)', 'Mortalité Infantile (‰)',
+                         'Âge Médian (années)'),
+            options = list(pageLength = 20,
+                           scrollX = TRUE,
+                           dom = 'Bfrtip'),
+            rownames = FALSE)
+})
+```
