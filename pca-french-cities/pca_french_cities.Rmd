@@ -1,0 +1,386 @@
+---
+title: "projet_r"
+author: "Klaus"
+date: "2024-06-04"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## I. Description des variables d'étude
+
+### I.1. Caractéristiques des variables de l'étude
+
+Dans cette section,  les variables d'études sont décrites de manière générale.
+
+```{r echo=FALSE}
+library(readxl)
+Vivre <- read_excel("data/Vivre.xlsx")
+Vivre
+```
+
+```{r echo=FALSE}
+library(tidyverse) 
+library(knitr)
+library(stats)
+library(ggplot2)
+Projet1<- Vivre %>%
+  dplyr::select(-Ville)
+library(skimr)
+my_skim <- skim_with(
+  numeric = sfl(mean =mean, sd = sd, min = min, max = max),
+  append = FALSE
+)
+my_skim(Projet1)
+
+```
+
+Les informations contenues dans le tableau 1.1  permettent d'asserter qu'il n'y a pas de valeurs manquantes dans nos ensembles de données.Le chômage dans ces 20 villes se situe globalement à 16,6, avec des valeurs variant entre 12,0 et 23,2 ; l’écart-type vaut 3,66, ce qui suggère des différences entre les villes.Le niveau de l’immobilier se situe en moyenne à 1 123 euros, avec des valeurs entre 685 et 2 973 euros ; avec un écart-type est de 477,9 euros, ce qui indique des différences de prix d'immobilier entre les 20 villes. Pour ce qui est de l’imposition, elle vaut globalement 53,5 % du revenu, avec un minimum de 45,0 % et un maximum de 67,0 %. L’écart-type de 5,31 % montre aussi l'existence des écarts entre les villes. La criminalité moyenne est de 98 crimes pour 1 000 habitants, avec des valeurs variant de 61 à 139 pour 1 000 habitants ; l’écart-type de 22 crimes pour 1 000 habitants révèle des écarts notables de sécurité entres les 20 villes. L’ensoleillement moyen sur la période allant 1 961 et 1 990 est de 2 095,3 heures par an , avec des valeurs variant entre 1 637** et 2 899 heures par ans ; l’écart-type du soleil est de 420,7, traduisant ainsi des différences d'ensoleillement sur la périodee, entre les villes.
+Cette analyse permet de comprendre que les 5 variables de l'étude, sont pertinentes dans le choix de sa vie de résidence en France. Mais alors comment faire ce choix ?
+
+
+```{r echo=FALSE}
+# data.frame df
+# 1) Base R (ultra-simple)
+num <- dplyr::select_if(Vivre, is.numeric)   # ou: num <- df[sapply(df, is.numeric)]
+boxplot(num, las = 2, col = "lightgray", main = "Boxplots de toutes les variables")
+
+# 2) ggplot2 (long format)
+library(tidyr); library(ggplot2); library(dplyr)
+num_long <- Vivre %>% select(where(is.numeric)) %>% pivot_longer(everything(),
+                                                              names_to = "variable",
+                                                              values_to = "valeur")
+ggplot(num_long, aes(x = variable, y = valeur)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(title = "Boxplots de toutes les variables numériques", x = "", y = "")
+
+```
+
+#### Distribution des variables et detection des outliers
+
+```{r echo = FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 1) Mettre au format long en gardant "Ville"
+long <- Vivre %>%
+  select(Ville, where(is.numeric)) %>%
+  pivot_longer(-Ville, names_to = "variable", values_to = "valeur")
+
+# 2) Marquer les outliers (règle 1.5*IQR) par variable
+long_flag <- long %>%
+  group_by(variable) %>%
+  mutate(
+    Q1   = quantile(valeur, 0.25, na.rm = TRUE),
+    Q3   = quantile(valeur, 0.75, na.rm = TRUE),
+    IQRv = IQR(valeur, na.rm = TRUE),
+    low  = Q1 - 1.5 * IQRv,
+    high = Q3 + 1.5 * IQRv,
+    is_out = valeur < low | valeur > high
+  ) %>%
+  ungroup()
+
+# 3) Tracer : boxplots + points outliers + étiquettes (Ville + valeur)
+p <- ggplot(long_flag, aes(x = variable, y = valeur)) +
+  geom_boxplot(outlier.shape = NA) +  # on gère nous-mêmes les outliers
+  geom_point(
+    data = subset(long_flag, is_out),
+    position = position_jitter(width = 0.1, height = 0),
+    alpha = 1.0
+  ) +
+  geom_text(
+    data = subset(long_flag, is_out),
+    aes(label = paste0(Ville, " (", round(valeur, 2), ")")),
+    position = position_nudge(x = 0.15),
+    size = 3, color = "firebrick"
+  ) +
+  coord_flip() +
+  labs(title = "Boxplots de toutes les variables numériques ",
+       x = "", y = "") +
+  theme_minimal()
+
+print(p)
+
+```
+
+Le boxplot met en évidence la présence de quelques valeurs aberrantes sur plusieurs variables (Soleil, Immobilier, Imposition), susceptibles d’influer sur l’ACP en tirant les axes et en accentuant certaines oppositions entre villes. Ce point est à surveiller et sera examiné plus finement par l’analyse de la contribution des variables à la formation des axes.
+
+
+#### I.2. Etude des liaisons entre les variables d'étude
+
+Pour cette étude, il est important de visualiser les liaisons existantes entre les variables 
+
+Pour cela les coefficients de corrélation et leurs significativités sont observés. La matrice des corrélations  fournit des éléments de description des associations entre variables de l'étude. Sa lecture  donne une première idée des relations existantes entre les variables.
+
+La matrice montre peu de liaisons vraiment solides, mais 05 ressortent significatives : Immobilier et imposition sont  positivement corrélés (≈0,73, ce qui suggère que les villes où le logement est cher ont aussi une fiscalité plus élevée ; c'est idem pour le soleil et le chômage. Immobilier et criminalité présentent une corrélation positive  (0,56), indiquant que des prix de logement plus élevé vont souvent de pair avec davantage d’incidents criminels déclarés ; Chômage et imposition sont fortement négativement corrélés (≈ −0,84), donc les villes avec un fort régime fiscal affichent en moyenne moins de chômage ; imposition et ensoleillement sont faiblement négativement corrélés (≈ −0,46), suggérant que les villes avec de fort taux d'imposition ont un peu moins de soleil.
+Les autres relations (ex. immobilier–soleil chômage–criminalité ) ne sont pas statistiquement significatives. Ceci dit, en pratique, “où vivre en France” pourrait opposer par exemple des villes chères en terme de logement/peu au chômage/plus taxées à des villes moins chères/plus au chômage/moins taxées, l’ensoleillement et le taux de crimininalité n'étant pas en reste.
+
+```{r echo = FALSE}
+library(metan)
+matcorr=corr_coef(Projet1)
+
+plot(matcorr)
+
+```
+
+
+## II. Classification des villes selon les quelques déterminant de choix de résidence 
+
+L'objectif de cette section est de mettre au point un regroupement en classes des 20 villes de l'étude en fonction des variables mises en jeu. Il s'avère important pour de faire ce regroupement compte tenu de la sensibilité et la spécificité de questions liées aux choix de résidence.
+
+Il est donc implémenté à cet effet une analyse en composante principale.
+
+#### KMO (Kaiser Meyer OLKIN)
+
+
+```{r echo = FALSE}
+performance::check_kmo(Projet1)
+```
+ 
+la valeur du KMO obtenue est 0.53 ; il est médiocre mais acceptable (0.5\<KMO\<0.7). Ceci garantit une factorisation plus ou moins intérressante qui résume avec une certaine pertinence l'information contenue dans nos données. Nous pouvons ainsi passer à la réalisation de notre ACP.
+
+#### Qualité globale de représentation
+
+##### Choix du nombre d'axes factoriels
+
+```{r echo = FALSE}
+library("FactoMineR")
+library("factoextra")
+
+library(tidyverse) 
+library(knitr)
+library(stats)
+library(ggplot2)
+library(tibble)
+
+Projet1<- Vivre |> column_to_rownames("Ville")   
+res.pca=PCA(Projet1, scale.unit = TRUE,ncp = 2, graph = F)
+```
+
+Il y a au total 5 axes factoriels. La règle du coude permet d'en choisir 2 ;  ce qui est confirmé aussi par la règle de Kaiser(Normalized PCA) et celle de Jouffre. Ces deux axes résument 88,8 % de l'information contenu dans le jeu de données.
+
+```{r echo = FALSE}
+library(knitr)
+library("factoextra")
+eig.val <- get_eigenvalue(res.pca)
+fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 60), linecolor = "red", barfill = "#00AFBB", barcolor = "black")+
+  theme_classic()
+```
+
+```{r echo = FALSE}
+eigs <- res.pca$eig[, "eigenvalue"]
+
+threshold <- 0.9 * mean(eigs)   
+keep_idx  <- which(eigs > threshold)
+
+res_jolliffe <- data.frame(
+  PC = paste0("Dim", seq_along(eigs)),
+  eigenvalue = round(eigs, 3),
+  explained  = round(res.pca$eig[, "percentage of variance"], 2),
+  cumulative = round(res.pca$eig[, "cumulative percentage of variance"], 2),
+  keep_jolliffe = seq_along(eigs) %in% keep_idx
+)
+
+print(res_jolliffe)
+cat("\nSeuil Jolliffe =", round(threshold, 3), 
+    "| Dimensions conservées :", paste0("Dim", keep_idx, collapse = ", "), "\n")
+
+```
+
+
+##### Qualité de représentation d'un point et contribution à la formation des axes
+
+```{r echo = FALSE}
+var <- get_pca_var(res.pca)
+# Contributions of variables to PC1
+a=fviz_contrib(res.pca, choice = "var", axes = 1, top = 10, fill= "lightgreen")+
+  theme_classic()
+# Contributions of variables to PC2
+b=fviz_contrib(res.pca, choice = "var", axes = 2,fill='orange')+
+  theme_classic()
+library("ggpubr")
+fig <- ggarrange(a, b,
+                    ncol = 1, nrow = 2)
+fig
+
+```
+
+```{r}
+kable(data.frame(res.pca$var$contrib[,1:2],4))
+```
+
+
+Le graphique présente la contribution des variables à la formation des deux premiers axes factoriels (Dim-1 et Dim-2) dans une analyse en composantes principales (ACP).
+
+Sur le premier graphique (pour Dim-1), on remarque que les variables Imposition et Chômage ont les contributions les plus élevées, représentant respectivement environ 30% et 25% de la variance expliquée par cet axe. La variable Soleil suit avec une contribution plus modeste, tandis que Immobilier et Criminalité ont des contributions faibles, proches de zéro.
+
+Le deuxième graphique (pour Dim-2) montre que la variable Criminalité domine largement la contribution à cet axe, avec environ 50%. Elle est suivie de loin par la variable Immobilier, qui contribue également de manière significative. Les autres variables, notamment Soleil, Chômage, et Imposition, ont des contributions faibles sur cet axe.
+
+Ces resultats sont en adéquation avec l'analyse des correlations entres les variables et les deux axes factoriels choisis.(Les  valeurs Cosinus carrés sont données dans le tableau suivant)
+
+```{r echo = FALSE}
+kable(data.frame(var$cos2, 4))
+```
+
+##### cercle de correlation
+
+```{r echo = FALSE}
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+             )+
+  theme_classic()
+```
+
+Ce cercle reflète en quelques sortes les résultats que nous avons obtenus avec la matrice de corrélation.
+
+Il apparaît clairement que le premier axe (Dim1) est fortement porté par les variables Imposition et Immobilier , qui sont les plus proches de cet axe et ont une forte contribution à sa variance (53,2%). Ainsi, les villes discrimées par cet axe seront principalement différenciées par ces deux facteurs (des villes à fort régime fiscal et des prix de logement élevés contre des faibles à prix de logement faibles de des taux d'imposition faible).
+D'autre part, le deuxième axe (Dim2), expliquant 35,6% de la variance, semble être influencé par les variables Criminalité et Chômage. Les villes différenciées par cet axe seront donc principalement caractérisées par des niveaux de criminalité ou de chômage plus élevés ou plus faibles.
+La variable Soleil a une contribution plus modeste comparée aux variables comme Imposition à la formation des axes. Cela signifie que Soleil joue un rôle secondaire dans la discrimination des villes selon le premier axe (Dim1), mais elle a tout de même une certaine influence.
+
+Qualité de représentation d'un point et contribution à la formation des axes
+
+L'examen du tableau nous permet de constater que les variables ratio de sexe, indice de stabilité et croissance du PIB, ne sont pas bien représentées dans le plan factoriel.
+
+
+
+```{r echo = FALSE}
+var <- get_pca_var(res.pca)
+# Contributions of variables to PC1
+a=fviz_contrib(res.pca, choice = "ind", axes = 1, top = 10, fill= "lightgreen")+
+  theme_classic()
+# Contributions of variables to PC2
+b=fviz_contrib(res.pca, choice = "ind", axes = 2,top = 10,fill='orange')+
+  theme_classic()
+library("ggpubr")
+fig <- ggarrange(a, b,
+                    ncol = 1, nrow = 2)
+fig
+```
+
+```{r echo = FALSE}
+kable(data.frame(res.pca$ind$contrib[,1:2],4))
+```
+
+
+Paris se distingue nettement dans les deux dimensions principales, Dim-1 et Dim-2, où elle occupe la première place en termes de contribution. Dans Dim-1, sa part dépasse les 20%, ce qui en fait la ville la plus influente dans cette dimension, suivie de villes comme Nîmes et Marseille. De même, dans Dim-2, Paris reste en tête avec une contribution similaire, dépassant également les autres villes telles que Aix-en-Provence et Nîmes. Ces résultats montrent que Paris joue un rôle prépondérant dans les deux dimensions, avec une influence marquée par rapport aux autres villes.
+
+
+```{r  echo = FALSE}
+kable(data.frame(res.pca$ind$cos2, 4))
+```
+
+
+Pour la Dimension 1, les villes les mieux représentées sont Rennes (0.854), Marseille (0.785), Nîmes (0.791) et Lyon  et Toulon (0.723). Montpellier (0.713), Dijon (0.595) et Grenoble (0.552) obtiennent aussi une bonne qualité de représentation. À l'inverse, Poitiers (0.0003), Aix-en-Provence (0.0005) et Brest (0.003) sont quasi inexistants sur cet axe, indiquant que leurs profils ne sont pas caractérisés par les variables qui structurent le premier axe. Dim.1 discrimine fortement certaines villes tout en en laissant d'autres de côté, ce qui suggère que cet axe capture une variabilité spécifique liée à un type de caractéristiques particulier (Imposition et immobilier).
+Pour la Dimension 2, le profil change radicalement. Brest (0.923) et Poitiers (0.912) affichent une représentation exceptionnelle, suivies de Clermont-Ferrand (0.877), Aix-en-Provence (0.785) et Limoges (0.763), Le Mans Tours et Saint-Etienne ont relativement une bonne qualité de représentation (0.5-0.7). En contraste, Lyon est quasi inexistant sur cet axe (0.007), tout comme Nantes (0.002). Cela montre que Dim.2 capture une variabilité complètement différente de celle de Dim.1, orthogonale à la première dimension.
+En termes de représentation globale, Nantes est particulièrement mal représentée puisque son cos² total (0.020) indique qu'elle n'est bien capturée sur aucun des deux premiers axes. Ses caractéristiques se manifestent probablement sur les axes supplémentaires. Les villes comme Rennes et Toulon sont bien représentées sur Dim.1 mais faiblement sur Dim.2, tandis que Brest et Poitiers montrent l'e pattern'inverse inverse, révélant une opposition nette entre les axes en termes de profils urbains.
+
+
+##### Nuage de points pays
+
+
+```{r echo = FALSE}
+
+fviz_pca_ind(res.pca, geom.ind = c("point","text"), repel = TRUE) + theme_classic()
+
+```
+
+
+La figure nous permet de visualiser et d'expliquer les différents rapprochements entre entre les villes en fonction des variables d'étude que nous avons considérées.
+
+Nous remarquons que :
+Les villes ayant une excellente qualité de représentation sur le plan sont clairement visibles et fiables pour l'interprétation. Marseille, Nîmes et Toulon forment un groupe cohérent dans le quadrant positif de Dim.1, avec des cos² respectifs de 0.785, 0.791 et 0.760. Ces trois villes sont très bien représentées et partagent un profil commun caractérisé par des valeurs positives et élevées sur le premier axe.
+Lyon (0.723) et Montpellier (0.713) se positionnent également dans la partie positive de Dim.1, avec une bonne qualité de représentation. Bien que Montpellier soit aussi légèrement positive sur Dim.2, ces deux villes illustrent clairement une tendance marquée par le premier axe.
+Dijon (0.595) et Grenoble (0.552) affichent des représentations acceptables, bien que moins exceptionnelles que les précédentes. Dijon se place légèrement négatif sur Dim.1 tandis que Grenoble reste proche de l'origine mais légèrement positif.
+Brest (0.923) et Poitiers (0.912) sont deux cas particuliers : bien que leur cos² global soit bon, ils sont dominés par Dim.2. Brest et Poitiers sont essentiellement caractérisés par le deuxième axe, avec des positions très négatives sur Dim.1 mais fortement structurées par Dim.2.
+
+### Coonclusion : 
+
+Marseille, Nimes, Toulon et Montpelier se distinguent par des taux d'imposition bas et des prix de logement relativement faibles. Ce sont des villes très ensoleillées, comparées aux autres.
+
+Alors les villes à gauche (parmi celles bien représentées) sont les plus chères en termes de logement/fortement imposées : Lyon, Rennes, Dijon, Grenoble. Elles sont moins ensoleillés que les premières.
+
+Aix-en-provence se démarque des autres villes selon le 2nd axe factoriel, par un niveau de criminalité élevé. les autres différences moin perceptibles subsistant dans la variable Chomage.
+
+
+
+### La viLLE DE PARIS 
+
+
+Après avoir relancé l’ACP en excluant Paris, le constat est que la structure factorielle demeure globalement inchangée : les mêmes axes ressortent et les villes conservent des positions et qualités de représentation similaires. Lorsque Paris est inclus, il est surtout bien représenté par la deuxième dimension et s’en distingue par un niveau élevé de criminalité et ses fort prix immobiliers, ce qui explique qu’il polarise ce facteur sans modifier l’organisation d’ensemble observée une fois retiré.
+
+
+```{r echo = FALSE}
+Projet1_sans_Paris <- Projet1[rownames(Projet1) != "Paris", ]
+res.pca <- PCA(Projet1_sans_Paris, scale.unit = TRUE, ncp = 2, graph = T)
+
+Paris <- Projet1[rownames(Projet1) == "Paris", ]
+
+Paris_proj <- predict(res.pca, newdata = Paris)
+```
+```{r}
+fviz_pca_var(res.pca, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07")
+             )+
+  theme_classic()
+```
+
+
+```{r}
+var <- get_pca_var(res.pca)
+# Contributions of variables to PC1
+a=fviz_contrib(res.pca, choice = "var", axes = 1, top = 10, fill= "lightgreen")+
+  theme_classic()
+# Contributions of variables to PC2
+b=fviz_contrib(res.pca, choice = "var", axes = 2,top = 10,fill='orange')+
+  theme_classic()
+library("ggpubr")
+fig <- ggarrange(a, b,
+                    ncol = 1, nrow = 2)
+fig
+```
+
+
+```{r echo = FALSE}
+var <- get_pca_var(res.pca)
+# Contributions of variables to PC1
+a=fviz_contrib(res.pca, choice = "ind", axes = 1, top = 10, fill= "lightgreen")+
+  theme_classic()
+# Contributions of variables to PC2
+b=fviz_contrib(res.pca, choice = "ind", axes = 2,top = 10,fill='orange')+
+  theme_classic()
+library("ggpubr")
+fig <- ggarrange(a, b,
+                    ncol = 1, nrow = 2)
+fig
+```
+
+```{r echo = FALSE}
+kable(data.frame(res.pca$ind$cos2, 4))
+```
+
+Dim.1 (53,7%) est avant tout structuré par Chômage, puis Imposition et Soleil. Concrètement, l’axe horizontal oppose :
+
+à droite : des villes comme Nîmes, Montpellier, Marseille, Toulon, qui portent le signal de Dim.1 (profil marqué par le fort taux de chômage, faible taux d'imposition et un ensoleillement marquée) ; à gauche : Dijon, Lyon, Rennes, Le mans et Tours (profil opposé sur ces mêmes dimensions).
+
+Dim.2 (33,7%) est principalement porté par Immobilier, puis Criminalité. L’axe vertical sépare :
+en haut : Aix-en-Provence (très haut)indiquant un profil fortement différencié par l’immobilier (et, dans une moindre mesure, par la criminalité) ; en bas : Saint-Étienne, Brest, Limoges, Poitiers, qui se situent à l’opposé sur ces dimensions (prix immobilier bas et taux de criminalité relativement bas).
+
+
+```{r}
+Paris_proj 
+```
+
+```{r echo = FALSE}
+summary(res.pca)
+```
+
+
+
+
